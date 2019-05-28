@@ -75,8 +75,9 @@ init_timer:
 	
 wait_timer:
 	movia r2, 0xFF202004	# control_addr -> r2
-	movui r15, 0b0100	# 0b0100 -> r15
-	stw r15, (r2)		# start timer(0b0100 -> control)
+	ldw r15, (r2)		# content of control -> r15
+	ori r15, r15, 0b0100	# mask 2nd bit of the content of control (r15||0b0100 -> r15)
+	stw r15, (r2)		# start timer(masked content of control -> control)
 WHILE:
 	movia r2, 0xFF202000	# status_addr -> r2
 	ldw r15, (r2)		# status -> r15
