@@ -8,11 +8,15 @@
 ###############################################
 # Definition von symbolen Konstanten
 ###############################################
-	.equ STACK_SIZE, 0x400	# stack size
 	#.equ PUSH_r9_1, subi sp, sp, 4
 	#.equ PUSH_r9_2, stw r9, (sp)
 	#.equ POP_r9_1, ldw r9, (sp)
 	#.equ POP_r9_2, addi sp, sp, 4
+	.equ STACK_SIZE, 0x400	# stack size
+	.equ periodl_addr, 0xFF202008
+	.equ periodh_addr, 0xFF20200C
+	.equ control_addr, 0xFF202004
+	.equ status_addr, 0xFF202000
 ###############################################
 # DATA SECTION
 # assumption: 12 kByte data section (0 - 0x2fff)
@@ -49,56 +53,59 @@ _start:
 	addi	sp, sp, STACK_SIZE	# stack start position should
 					# begin at end of section
 START:
-	mov r7, r0			# COUNTER init
-LOOP:
-	call write_LED		# subroutine write_LED is called
-	call read_COUNT_BUTTON	# subroutine read_COUNT_BUTTON is called
-	call read_CLEAR_BUTTON	# subroutine read_CLEAR_BUTTON is called
-	br LOOP			# check for the key pressed again
+	movia r15, 200000000	# r15 <- 200.000.000 // 2 seconds
+	call init_timer		# subroutine init_timer(r15) is called
+	movi r7, 1
+	call write_LED		# write_LED(on)
+	call wait_timer		# subroutine wait_timer() is called
+	mov r7, r0	
+	call write_LED		# write_LED(on)
+	br endloop		# end
 
-read_COUNT_BUTTON:
-	subi sp, sp, 4		# PUSH_r9_1
-	stw r9, (sp)		# PUSH_r9_2
-	movia r9, 0xFF200050	# r9 <- 0xFF200050
-	ldw r9, (r9)		# r9 <- (0xFF200050)
-	andi r9, r9, 0x1	# r9 <- masked value of (0xFF200050)
-	bne r9, r0, RELEASED	# Pressed: if r9!=0 => goto RELEASED
-	br return_read_COUNT_BUTTON
-RELEASED:
-	movia r9, 0xFF200050		# r9 <- 0xFF200050
-	ldw r9, (r9)		# r9 <- (0xFF200050)
-	andi r9, r9, 0x1	# r9 <- masked value of (0xFF200050)
-	bne r9, r0, RELEASED	# Pressed: if r9!=0 => goto RELEASED
-	addi r7, r7, 1		# Pressed: COUNTER++ 
-return_read_COUNT_BUTTON:
-	ldw r9, (sp)		# POP_r9_1
-	addi sp, sp, 4		# POP_r9_2
-	ret	
+init_timer:
+	movia r2, periodl_addr	# periodl_addr -> r2
+	sth r15, (r2)		# r15L -> periodl TODO: ?is it enough to write only one word?
+	movia r2, periodh_addr	# periodh_addr -> r2
+	srli r15, r15, 16	# shift right by 16 bits
+	sth r15, (r2)		# r15H -> periodh TODO: ?is it enough to write only one word?
+	ret
 	
-read_CLEAR_BUTTON:
-	subi sp, sp, 4		# PUSH_r9_1
-	stw r9, (sp)		# PUSH_r9_2
-	movia r9, 0xFF200050		# r9 <- 0xFF200050
-	ldw r9, (r9)		# r9 <- (0xFF200050)
-	andi r9, r9, 0x8	# r9 <- masked value of (0xFF200050)
-	beq r9, r0, return_CLEAR_BUTTON	# if r9==0 => goto return_COUNT_BUTTON 
-	mov r7, r0		# COUNTER=0
-return_CLEAR_BUTTON:
-	ldw r9, (sp)		# POP_r9_1
-	addi sp, sp, 4		# POP_r9_2
-	ret			# return
-
+wait_timer:
+	movia r2, control_addr	# control_addr -> r2
+	ldw r15, (r2)		# content of control -> r15
+	ori r15, r15, 0b0100	# mask 2nd bit of the content of control (r15||0b0100 -> r15)
+	stw r15, (r2)		# start timer(masked content of control -> control)
+	movia r2, status_addr	# status_addr -> r2
+	stw r0, (r2)		# control <- 0 for explicit clear the timeout-bit
+WHILE:
+	movia r2, status_addr	# status_addr -> r2
+	ldw r15, (r2)		# status -> r15
+	andi r15, r15, 0b0001	# mask the content of the status
+	beq r15, r0, WHILE	# if timer is not expired(masked status == 0), check again
+				# the timer has expired(masked status != 0)
+	ret
+	
+	
+###############################################
 write_LED:
 	subi sp, sp, 4		# PUSH_r9_1
 	stw r9, (sp)		# PUSH_r9_2
 	movia r9, 0xFF200000	# r9 <- 0xFF200000=output_register_address
+	
 	stw r7, (r9)		# r7 -> (r9) COUNTER -> output_register
 	ldw r9, (sp)		# POP_r9_1
 	addi sp, sp, 4		# POP_r9_2
-	ret
+ret
+###############################################
+
 
 endloop:
 	br endloop		# that's it
 ###############################################
 	.end
+
+
+
+
+
 	
